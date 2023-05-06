@@ -169,7 +169,7 @@ function! s:HexCode(str, lineno) "{{{2
   endif
   let ret = []
   let place = 0
-  let colorpat = '#[0-9A-Fa-f]\{3\}\>\|#[0-9A-Fa-f]\{6\}\>\|#[0-9A-Fa-f]\{8\}\>\|#[0-9A-Fa-f]\{4\}\>'
+  let colorpat = '#\x\{3\}\>\|#\x\{6\}\>\|#\x\{8\}\>\|#\x\{4\}\>'
   while 1
     let foundcolor = matchstr(a:str, colorpat, place)
     if foundcolor == ''
@@ -178,51 +178,212 @@ function! s:HexCode(str, lineno) "{{{2
     let place = matchend(a:str, colorpat, place)
     let pat = foundcolor . '\>'
     let colorlen = len(foundcolor)
-    if get(g:, 'colorizer_hex_alpha_first') == 1
+    if g:colorizer_color_format == 'argb' || g:colorizer_color_format == 'abgr'
       if colorlen == 4 || colorlen == 5
-        let ha = tolower(foundcolor[1])
-        let hr = tolower(foundcolor[2])
-        let hg = tolower(foundcolor[3])
-        let hb = tolower(foundcolor[4])
-        let foundcolor = substitute(foundcolor, '[[:xdigit:]]', '&&', 'g')
-      else
-        let ha = tolower(foundcolor[1:2])
-        let hr = tolower(foundcolor[3:4])
-        let hg = tolower(foundcolor[5:6])
-        let hb = tolower(foundcolor[7:8])
+        let offset = (colorlen == 5)
+        if offset
+            let ha = tolower(foundcolor[1]) . tolower(foundcolor[1])
+        else
+            let ha = 'ff'
+        endif
+
+        if g:colorizer_color_format == 'argb'
+            let hr = tolower(foundcolor[offset + 1]) . tolower(foundcolor[offset + 1])
+            let hg = tolower(foundcolor[offset + 2]) . tolower(foundcolor[offset + 2])
+            let hb = tolower(foundcolor[offset + 3]) . tolower(foundcolor[offset + 3])
+        else
+            let hb = tolower(foundcolor[offset + 1]) . tolower(foundcolor[offset + 1])
+            let hg = tolower(foundcolor[offset + 2]) . tolower(foundcolor[offset + 2])
+            let hr = tolower(foundcolor[offset + 3]) . tolower(foundcolor[offset + 3])
+        endif
+      elseif colorlen == 7
+        if g:colorizer_color_format == 'argb'
+          let hr = tolower(foundcolor[1:2])
+          let hg = tolower(foundcolor[3:4])
+          let hb = tolower(foundcolor[5:6])
+        elseif g:colorizer_color_format == 'abgr'
+          let hb = tolower(foundcolor[1:2])
+          let hg = tolower(foundcolor[3:4])
+          let hr = tolower(foundcolor[5:6])
+        endif
+        let ha = 'ff'
+      elseif colorlen == 9
+        if g:colorizer_color_format == 'argb'
+          let ha = tolower(foundcolor[1:2])
+          let hr = tolower(foundcolor[3:4])
+          let hg = tolower(foundcolor[5:6])
+          let hb = tolower(foundcolor[7:8])
+        elseif g:colorizer_color_format == 'abgr'
+          let ha = tolower(foundcolor[1:2])
+          let hb = tolower(foundcolor[3:4])
+          let hg = tolower(foundcolor[5:6])
+          let hr = tolower(foundcolor[7:8])
+        endif
       endif
+      let foundcolor = '#' . hr . hg . hb
       if len(foundcolor) == 9
-        let alpha      = foundcolor[1:2]
-        let foundcolor = '#'.foundcolor[3:8]
+        let alpha      = foundcolor[2:3]
+        let foundcolor = '#'.foundcolor[4:9]
       else
-        let alpha = 'ff'
+        let alpha = ha "'ff'
       endif
       if empty(rgb_bg)
         if colorlen == 5
           let pat = printf('\c#\x\zs%s%s%s\ze\>', hr,hg,hb)
+          echom pat
         elseif colorlen == 9
           let pat = printf('\c#\x\x\zs%s%s%s\ze\>', hr,hg,hb)
         endif
       endif
     else
       if colorlen == 4 || colorlen == 5
-        let hr = tolower(foundcolor[1])
-        let hg = tolower(foundcolor[2])
-        let hb = tolower(foundcolor[3])
-        let ha = tolower(foundcolor[4])
-        let foundcolor = substitute(foundcolor, '[[:xdigit:]]', '&&', 'g')
+        let hr = tolower(foundcolor[1]) . tolower(foundcolor[1])
+        let hg = tolower(foundcolor[2]) . tolower(foundcolor[2])
+        let hb = tolower(foundcolor[3]) . tolower(foundcolor[3])
+        if colorlen == 5
+            let ha = tolower(foundcolor[4]) . tolower(foundcolor[4])
+        else
+            let ha = 'ff'
+        endif
       else
-        let hr = tolower(foundcolor[1:2])
-        let hg = tolower(foundcolor[3:4])
-        let hb = tolower(foundcolor[5:6])
-        let ha = tolower(foundcolor[7:8])
+        if g:colorizer_color_format == 'rgba'
+          let hr = tolower(foundcolor[1:2])
+          let hg = tolower(foundcolor[3:4])
+          let hb = tolower(foundcolor[5:6])
+          let ha = tolower(foundcolor[7:8])
+          if len(ha) == 0
+            let ha = 'ff'
+          endif
+        endif
       endif
+
+      let foundcolor = '#' . hr . hg . hb
+      let alpha = ha
+
+      if empty(rgb_bg)
+        if colorlen == 5
+          let pat = printf('\c#%s%s%s\ze\x\>', hr,hg,hb)
+        elseif colorlen == 9
+          let pat = printf('\c#%s%s%s\ze\x\x\>', hr,hg,hb)
+        endif
+      endif
+    endif
+    if empty(rgb_bg) || tolower(alpha) == 'ff'
+      call add(ret, [foundcolor, pat])
+    else
+      let rgba    = s:Hexa2Rgba(foundcolor, alpha)
+      let rgb     = s:Rgba2Rgb(rgba[0], rgba[1], rgba[2], rgba[3], 0, rgb_bg)
+      let l:color = printf('#%02x%02x%02x', rgb[0], rgb[1], rgb[2])
+      call add(ret, [l:color, pat])
+    endif
+  endwhile
+  return ret
+endfunction
+
+
+function! s:HexCodeNum(str, lineno) "{{{2
+  " finds RGB: 0x00f 0x0000ff and RGBA: 0x00f8 0x0000ff88 (or ARGB: 0x800f 0x880000ff)
+  if has("gui_running")
+    let rgb_bg = s:RgbBgColor()
+  else
+    " translucent colors would display incorrectly, so ignore the alpha value
+    let rgb_bg = []
+  endif
+  let ret = []
+  let place = 0
+  let colorpat = '0[xX]\x\{3\}\>\|0[xX]\x\{6\}\>\|0[xX]\x\{8\}\>\|0[xX]\x\{4\}\>'
+  while 1
+    let foundcolor = matchstr(a:str, colorpat, place)
+    if foundcolor == ''
+      break
+    endif
+    let foundcolor = '#' . strpart(foundcolor, 2, 8)
+    let place = matchend(a:str, colorpat, place)
+    "let pat = foundcolor . '\>'
+    let pat = '0[xX]' . strpart(foundcolor, 1, strlen(foundcolor) -1) . '\>'
+    let colorlen = len(foundcolor)
+    if g:colorizer_color_format == 'argb' || g:colorizer_color_format == 'abgr'
+      if colorlen == 4 || colorlen == 5
+        let offset = (colorlen == 5)
+        if offset
+            let ha = tolower(foundcolor[1]) . tolower(foundcolor[1])
+        else
+            let ha = 'ff'
+        endif
+
+        if g:colorizer_color_format == 'argb'
+            let hr = tolower(foundcolor[offset + 1]) . tolower(foundcolor[offset + 1])
+            let hg = tolower(foundcolor[offset + 2]) . tolower(foundcolor[offset + 2])
+            let hb = tolower(foundcolor[offset + 3]) . tolower(foundcolor[offset + 3])
+        else
+            let hb = tolower(foundcolor[offset + 1]) . tolower(foundcolor[offset + 1])
+            let hg = tolower(foundcolor[offset + 2]) . tolower(foundcolor[offset + 2])
+            let hr = tolower(foundcolor[offset + 3]) . tolower(foundcolor[offset + 3])
+        endif
+      elseif colorlen == 7
+        if g:colorizer_color_format == 'argb'
+          let hr = tolower(foundcolor[1:2])
+          let hg = tolower(foundcolor[3:4])
+          let hb = tolower(foundcolor[5:6])
+        elseif g:colorizer_color_format == 'abgr'
+          let hb = tolower(foundcolor[1:2])
+          let hg = tolower(foundcolor[3:4])
+          let hr = tolower(foundcolor[5:6])
+        endif
+        let ha = 'ff'
+      elseif colorlen == 9
+        if g:colorizer_color_format == 'argb'
+          let ha = tolower(foundcolor[1:2])
+          let hr = tolower(foundcolor[3:4])
+          let hg = tolower(foundcolor[5:6])
+          let hb = tolower(foundcolor[7:8])
+        elseif g:colorizer_color_format == 'abgr'
+          let ha = tolower(foundcolor[1:2])
+          let hb = tolower(foundcolor[3:4])
+          let hg = tolower(foundcolor[5:6])
+          let hr = tolower(foundcolor[7:8])
+        endif
+      endif
+      let foundcolor = '#' . hr . hg . hb
       if len(foundcolor) == 9
-        let alpha      = foundcolor[7:8]
-        let foundcolor = foundcolor[0:6]
+        let alpha      = foundcolor[2:3]
+        let foundcolor = '#'.foundcolor[4:9]
       else
-        let alpha = 'ff'
+        let alpha = ha "'ff'
       endif
+      if empty(rgb_bg)
+        if colorlen == 5
+          let pat = printf('\c#\x\zs%s%s%s\ze\>', hr,hg,hb)
+          echom pat
+        elseif colorlen == 9
+          let pat = printf('\c#\x\x\zs%s%s%s\ze\>', hr,hg,hb)
+        endif
+      endif
+    else
+      if colorlen == 4 || colorlen == 5
+        let hr = tolower(foundcolor[1]) . tolower(foundcolor[1])
+        let hg = tolower(foundcolor[2]) . tolower(foundcolor[2])
+        let hb = tolower(foundcolor[3]) . tolower(foundcolor[3])
+        if colorlen == 5
+            let ha = tolower(foundcolor[4]) . tolower(foundcolor[4])
+        else
+            let ha = 'ff'
+        endif
+      else
+        if g:colorizer_color_format == 'rgba'
+          let hr = tolower(foundcolor[1:2])
+          let hg = tolower(foundcolor[3:4])
+          let hb = tolower(foundcolor[5:6])
+          let ha = tolower(foundcolor[7:8])
+          if len(ha) == 0
+            let ha = 'ff'
+          endif
+        endif
+      endif
+
+      let foundcolor = '#' . hr . hg . hb
+      let alpha = ha
+
       if empty(rgb_bg)
         if colorlen == 5
           let pat = printf('\c#%s%s%s\ze\x\>', hr,hg,hb)
@@ -424,13 +585,32 @@ endfunction
 
 function! colorizer#AlphaPositionToggle() "{{{1
   if exists('#Colorizer')
-    if get(g:, 'colorizer_hex_alpha_first') == 1
-      let g:colorizer_hex_alpha_first = 0
+    if get(g:, 'colorizer_color_format') != 'abgr'
+      if get(g:, 'colorizer_hex_alpha_first') == 1
+        let g:colorizer_hex_alpha_first = 0
+      else
+        let g:colorizer_hex_alpha_first = 1
+      endif
     else
       let g:colorizer_hex_alpha_first = 1
     endif
     call colorizer#ColorHighlight(1)
   endif
+endfunction
+
+function! colorizer#ColorFormatToggle()
+  if get(g:, 'colorizer_color_format') == 'abgr'
+      let g:colorizer_color_format = 'argb'
+      let g:colorizer_hex_alpha_first = 1
+  elseif get(g:, 'colorizer_color_format') == 'argb'
+      let g:colorizer_color_format = 'rgba'
+      let g:colorizer_hex_alpha_first = 0
+  else
+      let g:colorizer_color_format = 'abgr'
+      let g:colorizer_hex_alpha_first = 1
+  endif
+  echom 'g:colorizer_color_format = ' . g:colorizer_color_format
+  call colorizer#ColorHighlight(1)
 endfunction
 
 function! s:GetXterm2rgbTable() "{{{1
@@ -445,11 +625,14 @@ function! s:GetXterm2rgbTable() "{{{1
 endfun
 
 " Setups {{{1
-let s:ColorFinder = [function('s:HexCode'), function('s:RgbColor'), function('s:RgbaColor')]
+let s:ColorFinder = [function('s:HexCode'), function('s:HexCodeNum'), function('s:RgbColor'), function('s:RgbaColor')]
 let s:force_group_update = 0
 let s:predefined_fgcolors = {}
 let s:predefined_fgcolors['dark']  = ['#444444', '#222222', '#000000']
 let s:predefined_fgcolors['light'] = ['#bbbbbb', '#dddddd', '#ffffff']
+
+"let g:colorizer_color_format = 'rgba'
+let g:colorizer_color_format = 'abgr'
 if !exists("g:colorizer_fgcontrast")
   " Default to black / white
   let g:colorizer_fgcontrast = len(s:predefined_fgcolors['dark']) - 1
